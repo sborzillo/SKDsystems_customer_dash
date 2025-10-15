@@ -34,6 +34,17 @@
         .user-info span {
             color: #666;
         }
+        .nav-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .nav-link:hover {
+            background: #f0f0f0;
+        }
         .logout-btn {
             padding: 8px 16px;
             background: #f44336;
@@ -79,10 +90,26 @@
         .table-header {
             padding: 20px 30px;
             border-bottom: 1px solid #e1e1e1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .table-header h2 {
             color: #333;
             font-size: 20px;
+        }
+        .manage-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .manage-link:hover {
+            background: #667eea;
+            color: white;
         }
         table {
             width: 100%;
@@ -150,6 +177,7 @@
     <nav class="navbar">
         <h1>SKD Systems Dashboard</h1>
         <div class="user-info">
+            <a href="/manage" class="nav-link">⚙️ Manage Customers</a>
             <span>Welcome, <%= user.fullName || user.username %></span>
             <a href="/logout" class="logout-btn">Logout</a>
         </div>
@@ -178,6 +206,7 @@
         <div class="customers-table">
             <div class="table-header">
                 <h2>Customer Overview</h2>
+                <a href="/manage" class="manage-link">+ Add/Edit Customers</a>
             </div>
             <table>
                 <thead>
