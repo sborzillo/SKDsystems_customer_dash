@@ -34,6 +34,9 @@
         tr:last-child td { border-bottom: none; }
         .actions { display: flex; gap: 8px; }
         .delete-form { display: inline; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-gray { background: #f1f5f9; color: #64748b; }
     </style>
 </head>
 <body>
@@ -69,6 +72,7 @@
                         <th>Customer Name</th>
                         <th>Company</th>
                         <th>Email</th>
+                        <th>Login</th>
                         <th>Hours Purchased</th>
                         <th>Hours Used</th>
                         <th>Servers</th>
@@ -79,7 +83,7 @@
                 <tbody>
                     <% if (customers.length === 0) { %>
                         <tr>
-                            <td colspan="8" style="text-align: center; color: #64748b; padding: 40px;">
+                            <td colspan="9" style="text-align: center; color: #64748b; padding: 40px;">
                                 No customers found. Click "Add New Customer" to get started.
                             </td>
                         </tr>
@@ -89,6 +93,13 @@
                                 <td><strong><%= customer.customer_name %></strong></td>
                                 <td><%= customer.company_name || '-' %></td>
                                 <td><%= customer.email || '-' %></td>
+                                <td>
+                                    <% if (customer.username) { %>
+                                        <span class="badge badge-success">✓ <%= customer.username %></span>
+                                    <% } else { %>
+                                        <span class="badge badge-gray">No login</span>
+                                    <% } %>
+                                </td>
                                 <td><%= parseFloat(customer.hours_purchased).toFixed(1) %>h</td>
                                 <td><%= parseFloat(customer.hours_used).toFixed(1) %>h</td>
                                 <td><%= customer.server_count || 0 %></td>
@@ -96,7 +107,7 @@
                                 <td>
                                     <div class="actions">
                                         <a href="/customer/<%= customer.id %>/edit" class="btn-edit">Edit</a>
-                                        <form method="POST" action="/customer/<%= customer.id %>/delete" class="delete-form" onsubmit="return confirm('Are you sure you want to delete <%= customer.customer_name %>? This will also delete all associated data.');">
+                                        <form method="POST" action="/customer/<%= customer.id %>/delete" class="delete-form" onsubmit="return confirm('Are you sure you want to delete <%= customer.customer_name %>? This will also delete all associated data and login account.');">
                                             <button type="submit" class="btn-delete">Delete</button>
                                         </form>
                                     </div>

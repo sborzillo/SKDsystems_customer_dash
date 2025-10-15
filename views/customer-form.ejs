@@ -23,8 +23,13 @@
         .form-group.full-width { grid-column: 1 / -1; }
         label { display: block; color: #334155; font-weight: 500; margin-bottom: 8px; font-size: 14px; }
         label .required { color: #ef4444; }
-        input { width: 100%; padding: 12px 16px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 14px; transition: all 0.2s; font-family: inherit; background: white; }
-        input:focus { outline: none; border-color: #E6282A; box-shadow: 0 0 0 3px rgba(230, 40, 42, 0.1); }
+        input, select { width: 100%; padding: 12px 16px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 14px; transition: all 0.2s; font-family: inherit; background: white; }
+        input:focus, select:focus { outline: none; border-color: #E6282A; box-shadow: 0 0 0 3px rgba(230, 40, 42, 0.1); }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; padding: 16px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
+        .checkbox-group input[type="checkbox"] { width: auto; margin: 0; }
+        .checkbox-group label { margin: 0; font-size: 14px; cursor: pointer; }
+        .login-fields { display: none; margin-top: 20px; padding: 20px; background: #f0f9ff; border-radius: 12px; border: 1px solid #bae6fd; }
+        .login-fields.show { display: block; }
         .form-actions { display: flex; gap: 12px; margin-top: 30px; padding-top: 30px; border-top: 1px solid #e2e8f0; }
         .btn { padding: 12px 32px; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; transition: all 0.2s; }
         .btn-primary { background: linear-gradient(90deg, #E6282A, #FFA3A5); color: white; }
@@ -33,7 +38,31 @@
         .btn-secondary:hover { background: #cbd5e1; }
         .help-text { font-size: 12px; color: #64748b; margin-top: 5px; }
         .alert-error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #991b1b; font-size: 14px; }
+        .info-box { background: #dbeafe; color: #1e40af; padding: 12px 16px; border-radius: 12px; font-size: 13px; border-left: 4px solid #3b82f6; margin-bottom: 20px; }
     </style>
+    <script>
+        function toggleLoginFields() {
+            const checkbox = document.getElementById('create_login_checkbox');
+            const loginFields = document.getElementById('login_fields');
+            const loginHiddenInput = document.getElementById('create_login');
+            
+            if (checkbox.checked) {
+                loginFields.classList.add('show');
+                loginHiddenInput.value = 'yes';
+            } else {
+                loginFields.classList.remove('show');
+                loginHiddenInput.value = 'no';
+            }
+        }
+        
+        window.onload = function() {
+            const hasExistingLogin = <%= customer && customer.user_id ? 'true' : 'false' %>;
+            if (hasExistingLogin) {
+                document.getElementById('create_login_checkbox').checked = true;
+                toggleLoginFields();
+            }
+        }
+    </script>
 </head>
 <body>
     <nav class="navbar">
@@ -52,6 +81,9 @@
             <% } %>
 
             <form method="POST" action="<%= customer ? '/customer/' + customer.id + '/update' : '/customer/create' %>">
+                <input type="hidden" name="existing_user_id" value="<%= customer && customer.user_id ? customer.user_id : '' %>">
+                <input type="hidden" id="create_login" name="create_login" value="no">
+                
                 <div class="section-title">Customer Information</div>
                 
                 <div class="form-grid">
@@ -69,6 +101,39 @@
                     <label for="email">Email Address</label>
                     <input type="email" id="email" name="email" value="<%= customer ? (customer.email || '') : '' %>">
                     <div class="help-text">Must be unique for each customer</div>
+                </div>
+
+                <div class="section-title">Login Account</div>
+                
+                <div class="checkbox-group">
+                    <input type="checkbox" id="create_login_checkbox" onchange="toggleLoginFields()">
+                    <label for="create_login_checkbox">Create login account for this customer</label>
+                </div>
+                
+                <div id="login_fields" class="login-fields">
+                    <% if (customer && customer.user_id) { %>
+                        <div class="info-box">
+                            This customer already has a login account (username: <strong><%= customer.username %></strong>). Leave password blank to keep existing password.
+                        </div>
+                    <% } else { %>
+                        <div class="info-box">
+                            The customer will be able to log in and view their own metrics only.
+                        </div>
+                    <% } %>
+                    
+                    <div class="form-group">
+                        <label for="login_username">Username <span class="required">*</span></label>
+                        <input type="text" id="login_username" name="login_username" value="<%= customer && customer.username ? customer.username : '' %>">
+                    </div>
+                    <div class="form-group">
+                        <label for="login_password">Password <%= customer && customer.user_id ? '' : '<span class="required">*</span>' %></label>
+                        <input type="password" id="login_password" name="login_password">
+                        <% if (customer && customer.user_id) { %>
+                            <div class="help-text">Leave blank to keep existing password</div>
+                        <% } else { %>
+                            <div class="help-text">Must be at least 8 characters</div>
+                        <% } %>
+                    </div>
                 </div>
 
                 <div class="section-title">Hours Management</div>
