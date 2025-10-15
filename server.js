@@ -56,6 +56,14 @@ function requireAuth(req, res, next) {
     res.redirect('/login');
 }
 
+// Admin-only middleware
+function requireAdmin(req, res, next) {
+    if (req.session && req.session.userId && req.session.isAdmin) {
+        return next();
+    }
+    res.status(403).send('Access denied. Admin privileges required.');
+}
+
 // Initialize default admin user
 async function initializeDefaultUser() {
     try {
@@ -64,8 +72,8 @@ async function initializeDefaultUser() {
         if (checkUser.rows.length === 0) {
             const hashedPassword = await bcrypt.hash('admin123', 10);
             await pool.query(
-                'INSERT INTO users (username, password_hash, email, full_name) VALUES ($1, $2, $3, $4)',
-                ['admin', hashedPassword, 'admin@skdsystems.com', 'System Administrator']
+                'INSERT INTO users (username, password_hash, email, full_name, is_admin) VALUES ($1, $2, $3, $4, $5)',
+                ['admin', hashedPassword, 'admin@skdsystems.com', 'System Administrator', true]
             );
             console.log('Default admin user created (username: admin, password: admin123)');
             console.log('IMPORTANT: Please change the default password immediately!');
@@ -117,6 +125,7 @@ app.post('/login', async (req, res) => {
         req.session.userId = user.id;
         req.session.username = user.username;
         req.session.fullName = user.full_name;
+        req.session.isAdmin = user.is_admin;
         
         res.redirect('/dashboard');
     } catch (error) {
@@ -146,7 +155,11 @@ app.get('/dashboard', requireAuth, async (req, res) => {
         );
         
         res.render('dashboard', {
-            user: { username: req.session.username, fullName: req.session.fullName },
+            user: { 
+                username: req.session.username, 
+                fullName: req.session.fullName,
+                isAdmin: req.session.isAdmin 
+            },
             customers: customersResult.rows,
             stats: statsResult.rows[0]
         });
@@ -190,8 +203,8 @@ app.get('/customer/:id', requireAuth, async (req, res) => {
     }
 });
 
-// Management page - list all customers with edit options
-app.get('/manage', requireAuth, async (req, res) => {
+// Management page - ADMIN ONLY
+app.get('/manage', requireAuth, requireAdmin, async (req, res) => {
     try {
         const customersResult = await pool.query(
             `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services
@@ -212,8 +225,8 @@ app.get('/manage', requireAuth, async (req, res) => {
     }
 });
 
-// Show create customer form
-app.get('/customer/new', requireAuth, (req, res) => {
+// Show create customer form - ADMIN ONLY
+app.get('/customer/new', requireAuth, requireAdmin, (req, res) => {
     res.render('customer-form', {
         user: { username: req.session.username, fullName: req.session.fullName },
         customer: null,
@@ -221,8 +234,8 @@ app.get('/customer/new', requireAuth, (req, res) => {
     });
 });
 
-// Create new customer
-app.post('/customer/create', requireAuth, async (req, res) => {
+// Create new customer - ADMIN ONLY
+app.post('/customer/create', requireAuth, requireAdmin, async (req, res) => {
     const client = await pool.connect();
     
     try {
@@ -273,8 +286,8 @@ app.post('/customer/create', requireAuth, async (req, res) => {
     }
 });
 
-// Show edit customer form
-app.get('/customer/:id/edit', requireAuth, async (req, res) => {
+// Show edit customer form - ADMIN ONLY
+app.get('/customer/:id/edit', requireAuth, requireAdmin, async (req, res) => {
     try {
         const customerId = req.params.id;
         
@@ -301,8 +314,8 @@ app.get('/customer/:id/edit', requireAuth, async (req, res) => {
     }
 });
 
-// Update customer
-app.post('/customer/:id/update', requireAuth, async (req, res) => {
+// Update customer - ADMIN ONLY
+app.post('/customer/:id/update', requireAuth, requireAdmin, async (req, res) => {
     const client = await pool.connect();
     
     try {
@@ -375,8 +388,8 @@ app.post('/customer/:id/update', requireAuth, async (req, res) => {
     }
 });
 
-// Delete customer
-app.post('/customer/:id/delete', requireAuth, async (req, res) => {
+// Delete customer - ADMIN ONLY
+app.post('/customer/:id/delete', requireAuth, requireAdmin, async (req, res) => {
     try {
         const customerId = req.params.id;
         
