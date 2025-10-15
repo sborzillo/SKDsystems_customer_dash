@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: customer_dash_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - dashboard_network
+
+  app:
+    build: .
+    container_name: customer_dash_app
+    restart: unless-stopped
+    ports:
+      - "${PORT}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PORT=3000
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SESSION_SECRET=${SESSION_SECRET}
+    depends_on:
+      - postgres
+    networks:
+      - dashboard_network
+    volumes:
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules
+
+volumes:
+  postgres_data:
+
+networks:
+  dashboard_network:
+    driver: bridge
