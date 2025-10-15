@@ -198,6 +198,69 @@ app.get('/dashboard', requireAuth, async (req, res) => {
     }
 });
 
+// Management page - ADMIN ONLY
+app.get('/manage', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const customersResult = await pool.query(
+            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, u.username
+             FROM customers c
+             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             LEFT JOIN users u ON c.user_id = u.id
+             ORDER BY c.customer_name`
+        );
+        
+        res.render('manage', {
+            user: { username: req.session.username, fullName: req.session.fullName },
+            customers: customersResult.rows,
+            success: req.query.success,
+            error: req.query.error
+        });
+    } catch (error) {
+        console.error('Management page error:', error);
+        res.status(500).send('Error loading management page');
+    }
+});
+
+// IMPORTANT: Specific routes MUST come before parameterized routes
+// Show create customer form - ADMIN ONLY
+app.get('/customer/new', requireAuth, requireAdmin, (req, res) => {
+    res.render('customer-form', {
+        user: { username: req.session.username, fullName: req.session.fullName },
+        customer: null,
+        error: null
+    });
+});
+
+// Show edit customer form - ADMIN ONLY
+app.get('/customer/:id/edit', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const customerId = req.params.id;
+        
+        const customerResult = await pool.query(
+            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, u.username, u.id as user_id
+             FROM customers c
+             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             LEFT JOIN users u ON c.user_id = u.id
+             WHERE c.id = $1`,
+            [customerId]
+        );
+        
+        if (customerResult.rows.length === 0) {
+            return res.status(404).send('Customer not found');
+        }
+        
+        res.render('customer-form', {
+            user: { username: req.session.username, fullName: req.session.fullName },
+            customer: customerResult.rows[0],
+            error: null
+        });
+    } catch (error) {
+        console.error('Edit customer error:', error);
+        res.status(500).send('Error loading customer');
+    }
+});
+
+// Customer detail view (MUST come after /customer/new and /customer/:id/edit)
 app.get('/customer/:id', requireAuth, async (req, res) => {
     try {
         const customerId = req.params.id;
@@ -235,38 +298,6 @@ app.get('/customer/:id', requireAuth, async (req, res) => {
         console.error('Customer detail error:', error);
         res.status(500).send('Error loading customer details');
     }
-});
-
-// Management page - ADMIN ONLY
-app.get('/manage', requireAuth, requireAdmin, async (req, res) => {
-    try {
-        const customersResult = await pool.query(
-            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, u.username
-             FROM customers c
-             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
-             LEFT JOIN users u ON c.user_id = u.id
-             ORDER BY c.customer_name`
-        );
-        
-        res.render('manage', {
-            user: { username: req.session.username, fullName: req.session.fullName },
-            customers: customersResult.rows,
-            success: req.query.success,
-            error: req.query.error
-        });
-    } catch (error) {
-        console.error('Management page error:', error);
-        res.status(500).send('Error loading management page');
-    }
-});
-
-// Show create customer form - ADMIN ONLY
-app.get('/customer/new', requireAuth, requireAdmin, (req, res) => {
-    res.render('customer-form', {
-        user: { username: req.session.username, fullName: req.session.fullName },
-        customer: null,
-        error: null
-    });
 });
 
 // Create new customer - ADMIN ONLY
@@ -337,35 +368,6 @@ app.post('/customer/create', requireAuth, requireAdmin, async (req, res) => {
         }
     } finally {
         client.release();
-    }
-});
-
-// Show edit customer form - ADMIN ONLY
-app.get('/customer/:id/edit', requireAuth, requireAdmin, async (req, res) => {
-    try {
-        const customerId = req.params.id;
-        
-        const customerResult = await pool.query(
-            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, u.username, u.id as user_id
-             FROM customers c
-             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
-             LEFT JOIN users u ON c.user_id = u.id
-             WHERE c.id = $1`,
-            [customerId]
-        );
-        
-        if (customerResult.rows.length === 0) {
-            return res.status(404).send('Customer not found');
-        }
-        
-        res.render('customer-form', {
-            user: { username: req.session.username, fullName: req.session.fullName },
-            customer: customerResult.rows[0],
-            error: null
-        });
-    } catch (error) {
-        console.error('Edit customer error:', error);
-        res.status(500).send('Error loading customer');
     }
 });
 
