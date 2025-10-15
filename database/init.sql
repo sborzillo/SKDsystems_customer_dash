@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS customers (
     email VARCHAR(255) UNIQUE,
     hours_purchased DECIMAL(10, 2) DEFAULT 0,
     hours_used DECIMAL(10, 2) DEFAULT 0,
+    user_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -44,6 +45,9 @@ CREATE TABLE IF NOT EXISTS activity_log (
     activity_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Add foreign key constraint for user_id in customers
+ALTER TABLE customers ADD CONSTRAINT fk_customer_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
 -- Insert sample customer data
 INSERT INTO customers (customer_name, company_name, email, hours_purchased, hours_used) VALUES
     ('John Doe', 'Acme Corp', 'john@acmecorp.com', 100.00, 45.50),
@@ -66,6 +70,7 @@ INSERT INTO activity_log (customer_id, activity_type, hours_consumed, descriptio
 
 -- Create indexes for better performance
 CREATE INDEX idx_customers_email ON customers(email);
+CREATE INDEX idx_customers_user ON customers(user_id);
 CREATE INDEX idx_infrastructure_customer ON infrastructure_stats(customer_id);
 CREATE INDEX idx_activity_customer ON activity_log(customer_id);
 CREATE INDEX idx_activity_date ON activity_log(activity_date);
