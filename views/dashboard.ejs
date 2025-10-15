@@ -25,7 +25,7 @@
             border-bottom: 1px solid #e2e8f0;
         }
         .navbar-content {
-            max-w-1400px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 0 24px;
             display: flex;
@@ -80,7 +80,7 @@
             box-shadow: 0 4px 12px rgba(230, 40, 42, 0.3);
         }
         .container {
-            max-w: 1400px;
+            max-width: 1400px;
             margin: 32px auto;
             padding: 0 24px;
         }
@@ -219,7 +219,9 @@
         <div class="navbar-content">
             <h1><span class="gradient-text">SKD</span>Systems Dashboard</h1>
             <div class="user-info">
-                <a href="/manage" class="nav-link">⚙️ Manage Customers</a>
+                <% if (user.isAdmin) { %>
+                    <a href="/manage" class="nav-link">⚙️ Manage Customers</a>
+                <% } %>
                 <span>Welcome, <%= user.fullName || user.username %></span>
                 <a href="/logout" class="logout-btn">Logout</a>
             </div>
@@ -249,7 +251,9 @@
         <div class="customers-table">
             <div class="table-header">
                 <h2>Customer Overview</h2>
-                <a href="/manage" class="manage-link">+ Add/Edit Customers</a>
+                <% if (user.isAdmin) { %>
+                    <a href="/manage" class="manage-link">+ Add/Edit Customers</a>
+                <% } %>
             </div>
             <table>
                 <thead>
