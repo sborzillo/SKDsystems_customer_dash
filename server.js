@@ -104,7 +104,7 @@ app.post('/login', async (req, res) => {
     
     try {
         const result = await pool.query(
-            'SELECT * FROM users WHERE username = $1 AND is_active = TRUE',
+            'SELECT u.*, c.id as customer_id FROM users u LEFT JOIN customers c ON c.user_id = u.id WHERE u.username = $1 AND u.is_active = TRUE',
             [username]
         );
         
@@ -126,6 +126,7 @@ app.post('/login', async (req, res) => {
         req.session.username = user.username;
         req.session.fullName = user.full_name;
         req.session.isAdmin = user.is_admin;
+        req.session.customerId = user.customer_id;
         
         res.redirect('/dashboard');
     } catch (error) {
@@ -136,23 +137,51 @@ app.post('/login', async (req, res) => {
 
 app.get('/dashboard', requireAuth, async (req, res) => {
     try {
-        const customersResult = await pool.query(
-            `SELECT c.*, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services,
+        let customersQuery, customersParams;
+        
+        if (req.session.isAdmin) {
+            // Admin sees all customers
+            customersQuery = `SELECT c.*, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services,
                     (c.hours_purchased - c.hours_used) as hours_remaining,
                     ROUND((c.hours_used / NULLIF(c.hours_purchased, 0) * 100)::numeric, 2) as usage_percentage
              FROM customers c
              LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
-             ORDER BY c.customer_name`
-        );
+             ORDER BY c.customer_name`;
+            customersParams = [];
+        } else {
+            // Regular users only see their own customer data
+            customersQuery = `SELECT c.*, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services,
+                    (c.hours_purchased - c.hours_used) as hours_remaining,
+                    ROUND((c.hours_used / NULLIF(c.hours_purchased, 0) * 100)::numeric, 2) as usage_percentage
+             FROM customers c
+             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             WHERE c.id = $1
+             ORDER BY c.customer_name`;
+            customersParams = [req.session.customerId];
+        }
         
-        const statsResult = await pool.query(
-            `SELECT 
+        const customersResult = await pool.query(customersQuery, customersParams);
+        
+        let statsQuery, statsParams;
+        if (req.session.isAdmin) {
+            statsQuery = `SELECT 
                 COUNT(*) as total_customers,
                 COALESCE(SUM(hours_purchased), 0) as total_hours_purchased,
                 COALESCE(SUM(hours_used), 0) as total_hours_used,
                 COALESCE(SUM(hours_purchased - hours_used), 0) as total_hours_remaining
-             FROM customers`
-        );
+             FROM customers`;
+            statsParams = [];
+        } else {
+            statsQuery = `SELECT 
+                1 as total_customers,
+                COALESCE(SUM(hours_purchased), 0) as total_hours_purchased,
+                COALESCE(SUM(hours_used), 0) as total_hours_used,
+                COALESCE(SUM(hours_purchased - hours_used), 0) as total_hours_remaining
+             FROM customers WHERE id = $1`;
+            statsParams = [req.session.customerId];
+        }
+        
+        const statsResult = await pool.query(statsQuery, statsParams);
         
         res.render('dashboard', {
             user: { 
@@ -172,6 +201,11 @@ app.get('/dashboard', requireAuth, async (req, res) => {
 app.get('/customer/:id', requireAuth, async (req, res) => {
     try {
         const customerId = req.params.id;
+        
+        // Check if user has permission to view this customer
+        if (!req.session.isAdmin && req.session.customerId != customerId) {
+            return res.status(403).send('Access denied.');
+        }
         
         const customerResult = await pool.query(
             `SELECT c.*, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, i.last_updated,
@@ -207,9 +241,10 @@ app.get('/customer/:id', requireAuth, async (req, res) => {
 app.get('/manage', requireAuth, requireAdmin, async (req, res) => {
     try {
         const customersResult = await pool.query(
-            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services
+            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, u.username
              FROM customers c
              LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             LEFT JOIN users u ON c.user_id = u.id
              ORDER BY c.customer_name`
         );
         
@@ -248,16 +283,31 @@ app.post('/customer/create', requireAuth, requireAdmin, async (req, res) => {
             server_count,
             storage_gb,
             bandwidth_gb,
-            active_services
+            active_services,
+            create_login,
+            login_username,
+            login_password
         } = req.body;
 
         await client.query('BEGIN');
 
+        let userId = null;
+
+        // Create user account if requested
+        if (create_login === 'yes' && login_username && login_password) {
+            const hashedPassword = await bcrypt.hash(login_password, 10);
+            const userResult = await client.query(
+                'INSERT INTO users (username, password_hash, email, full_name, is_admin) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+                [login_username, hashedPassword, email, customer_name, false]
+            );
+            userId = userResult.rows[0].id;
+        }
+
         // Insert customer
         const customerResult = await client.query(
-            `INSERT INTO customers (customer_name, company_name, email, hours_purchased, hours_used)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [customer_name, company_name, email, parseFloat(hours_purchased) || 0, parseFloat(hours_used) || 0]
+            `INSERT INTO customers (customer_name, company_name, email, hours_purchased, hours_used, user_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [customer_name, company_name, email, parseFloat(hours_purchased) || 0, parseFloat(hours_used) || 0, userId]
         );
 
         const customerId = customerResult.rows[0].id;
@@ -276,11 +326,15 @@ app.post('/customer/create', requireAuth, requireAdmin, async (req, res) => {
         );
 
         await client.query('COMMIT');
-        res.redirect('/manage?success=Customer created successfully');
+        res.redirect('/manage?success=Customer created successfully' + (userId ? ' with login account' : ''));
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Create customer error:', error);
-        res.redirect('/manage?error=Failed to create customer');
+        if (error.code === '23505') {
+            res.redirect('/manage?error=Username or email already exists');
+        } else {
+            res.redirect('/manage?error=Failed to create customer');
+        }
     } finally {
         client.release();
     }
@@ -292,9 +346,10 @@ app.get('/customer/:id/edit', requireAuth, requireAdmin, async (req, res) => {
         const customerId = req.params.id;
         
         const customerResult = await pool.query(
-            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services
+            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services, u.username, u.id as user_id
              FROM customers c
              LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             LEFT JOIN users u ON c.user_id = u.id
              WHERE c.id = $1`,
             [customerId]
         );
@@ -329,18 +384,51 @@ app.post('/customer/:id/update', requireAuth, requireAdmin, async (req, res) => 
             server_count,
             storage_gb,
             bandwidth_gb,
-            active_services
+            active_services,
+            create_login,
+            login_username,
+            login_password,
+            existing_user_id
         } = req.body;
 
         await client.query('BEGIN');
+
+        let userId = existing_user_id || null;
+
+        // Create or update user account if requested
+        if (create_login === 'yes' && login_username) {
+            if (existing_user_id) {
+                // Update existing user
+                if (login_password) {
+                    const hashedPassword = await bcrypt.hash(login_password, 10);
+                    await client.query(
+                        'UPDATE users SET username = $1, password_hash = $2, email = $3, full_name = $4 WHERE id = $5',
+                        [login_username, hashedPassword, email, customer_name, existing_user_id]
+                    );
+                } else {
+                    await client.query(
+                        'UPDATE users SET username = $1, email = $2, full_name = $3 WHERE id = $4',
+                        [login_username, email, customer_name, existing_user_id]
+                    );
+                }
+            } else if (login_password) {
+                // Create new user
+                const hashedPassword = await bcrypt.hash(login_password, 10);
+                const userResult = await client.query(
+                    'INSERT INTO users (username, password_hash, email, full_name, is_admin) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+                    [login_username, hashedPassword, email, customer_name, false]
+                );
+                userId = userResult.rows[0].id;
+            }
+        }
 
         // Update customer
         await client.query(
             `UPDATE customers 
              SET customer_name = $1, company_name = $2, email = $3, 
-                 hours_purchased = $4, hours_used = $5, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $6`,
-            [customer_name, company_name, email, parseFloat(hours_purchased) || 0, parseFloat(hours_used) || 0, customerId]
+                 hours_purchased = $4, hours_used = $5, user_id = $6, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $7`,
+            [customer_name, company_name, email, parseFloat(hours_purchased) || 0, parseFloat(hours_used) || 0, userId, customerId]
         );
 
         // Update or insert infrastructure stats
@@ -382,7 +470,11 @@ app.post('/customer/:id/update', requireAuth, requireAdmin, async (req, res) => 
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Update customer error:', error);
-        res.redirect('/manage?error=Failed to update customer');
+        if (error.code === '23505') {
+            res.redirect('/manage?error=Username or email already exists');
+        } else {
+            res.redirect('/manage?error=Failed to update customer');
+        }
     } finally {
         client.release();
     }
@@ -390,16 +482,32 @@ app.post('/customer/:id/update', requireAuth, requireAdmin, async (req, res) => 
 
 // Delete customer - ADMIN ONLY
 app.post('/customer/:id/delete', requireAuth, requireAdmin, async (req, res) => {
+    const client = await pool.connect();
     try {
         const customerId = req.params.id;
         
-        // Infrastructure stats and activity logs will be deleted automatically due to CASCADE
-        await pool.query('DELETE FROM customers WHERE id = $1', [customerId]);
+        await client.query('BEGIN');
         
+        // Get the user_id before deleting customer
+        const customerResult = await client.query('SELECT user_id FROM customers WHERE id = $1', [customerId]);
+        const userId = customerResult.rows[0]?.user_id;
+        
+        // Infrastructure stats and activity logs will be deleted automatically due to CASCADE
+        await client.query('DELETE FROM customers WHERE id = $1', [customerId]);
+        
+        // Delete associated user account if exists
+        if (userId) {
+            await client.query('DELETE FROM users WHERE id = $1', [userId]);
+        }
+        
+        await client.query('COMMIT');
         res.redirect('/manage?success=Customer deleted successfully');
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Delete customer error:', error);
         res.redirect('/manage?error=Failed to delete customer');
+    } finally {
+        client.release();
     }
 });
 
