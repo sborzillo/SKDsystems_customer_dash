@@ -190,6 +190,206 @@ app.get('/customer/:id', requireAuth, async (req, res) => {
     }
 });
 
+// Management page - list all customers with edit options
+app.get('/manage', requireAuth, async (req, res) => {
+    try {
+        const customersResult = await pool.query(
+            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services
+             FROM customers c
+             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             ORDER BY c.customer_name`
+        );
+        
+        res.render('manage', {
+            user: { username: req.session.username, fullName: req.session.fullName },
+            customers: customersResult.rows,
+            success: req.query.success,
+            error: req.query.error
+        });
+    } catch (error) {
+        console.error('Management page error:', error);
+        res.status(500).send('Error loading management page');
+    }
+});
+
+// Show create customer form
+app.get('/customer/new', requireAuth, (req, res) => {
+    res.render('customer-form', {
+        user: { username: req.session.username, fullName: req.session.fullName },
+        customer: null,
+        error: null
+    });
+});
+
+// Create new customer
+app.post('/customer/create', requireAuth, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        const {
+            customer_name,
+            company_name,
+            email,
+            hours_purchased,
+            hours_used,
+            server_count,
+            storage_gb,
+            bandwidth_gb,
+            active_services
+        } = req.body;
+
+        await client.query('BEGIN');
+
+        // Insert customer
+        const customerResult = await client.query(
+            `INSERT INTO customers (customer_name, company_name, email, hours_purchased, hours_used)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [customer_name, company_name, email, parseFloat(hours_purchased) || 0, parseFloat(hours_used) || 0]
+        );
+
+        const customerId = customerResult.rows[0].id;
+
+        // Insert infrastructure stats
+        await client.query(
+            `INSERT INTO infrastructure_stats (customer_id, server_count, storage_gb, bandwidth_gb, active_services)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+                customerId,
+                parseInt(server_count) || 0,
+                parseFloat(storage_gb) || 0,
+                parseFloat(bandwidth_gb) || 0,
+                parseInt(active_services) || 0
+            ]
+        );
+
+        await client.query('COMMIT');
+        res.redirect('/manage?success=Customer created successfully');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Create customer error:', error);
+        res.redirect('/manage?error=Failed to create customer');
+    } finally {
+        client.release();
+    }
+});
+
+// Show edit customer form
+app.get('/customer/:id/edit', requireAuth, async (req, res) => {
+    try {
+        const customerId = req.params.id;
+        
+        const customerResult = await pool.query(
+            `SELECT c.*, i.id as infra_id, i.server_count, i.storage_gb, i.bandwidth_gb, i.active_services
+             FROM customers c
+             LEFT JOIN infrastructure_stats i ON c.id = i.customer_id
+             WHERE c.id = $1`,
+            [customerId]
+        );
+        
+        if (customerResult.rows.length === 0) {
+            return res.status(404).send('Customer not found');
+        }
+        
+        res.render('customer-form', {
+            user: { username: req.session.username, fullName: req.session.fullName },
+            customer: customerResult.rows[0],
+            error: null
+        });
+    } catch (error) {
+        console.error('Edit customer error:', error);
+        res.status(500).send('Error loading customer');
+    }
+});
+
+// Update customer
+app.post('/customer/:id/update', requireAuth, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        const customerId = req.params.id;
+        const {
+            customer_name,
+            company_name,
+            email,
+            hours_purchased,
+            hours_used,
+            server_count,
+            storage_gb,
+            bandwidth_gb,
+            active_services
+        } = req.body;
+
+        await client.query('BEGIN');
+
+        // Update customer
+        await client.query(
+            `UPDATE customers 
+             SET customer_name = $1, company_name = $2, email = $3, 
+                 hours_purchased = $4, hours_used = $5, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $6`,
+            [customer_name, company_name, email, parseFloat(hours_purchased) || 0, parseFloat(hours_used) || 0, customerId]
+        );
+
+        // Update or insert infrastructure stats
+        const infraCheck = await client.query(
+            'SELECT id FROM infrastructure_stats WHERE customer_id = $1',
+            [customerId]
+        );
+
+        if (infraCheck.rows.length > 0) {
+            await client.query(
+                `UPDATE infrastructure_stats 
+                 SET server_count = $1, storage_gb = $2, bandwidth_gb = $3, 
+                     active_services = $4, last_updated = CURRENT_TIMESTAMP
+                 WHERE customer_id = $5`,
+                [
+                    parseInt(server_count) || 0,
+                    parseFloat(storage_gb) || 0,
+                    parseFloat(bandwidth_gb) || 0,
+                    parseInt(active_services) || 0,
+                    customerId
+                ]
+            );
+        } else {
+            await client.query(
+                `INSERT INTO infrastructure_stats (customer_id, server_count, storage_gb, bandwidth_gb, active_services)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [
+                    customerId,
+                    parseInt(server_count) || 0,
+                    parseFloat(storage_gb) || 0,
+                    parseFloat(bandwidth_gb) || 0,
+                    parseInt(active_services) || 0
+                ]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.redirect('/manage?success=Customer updated successfully');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Update customer error:', error);
+        res.redirect('/manage?error=Failed to update customer');
+    } finally {
+        client.release();
+    }
+});
+
+// Delete customer
+app.post('/customer/:id/delete', requireAuth, async (req, res) => {
+    try {
+        const customerId = req.params.id;
+        
+        // Infrastructure stats and activity logs will be deleted automatically due to CASCADE
+        await pool.query('DELETE FROM customers WHERE id = $1', [customerId]);
+        
+        res.redirect('/manage?success=Customer deleted successfully');
+    } catch (error) {
+        console.error('Delete customer error:', error);
+        res.redirect('/manage?error=Failed to delete customer');
+    }
+});
+
 app.get('/logout', (req, res) => {
     req.session.destroy((err) => {
         if (err) {
