@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SKD Systems</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+        }
+        .navbar {
+            background: white;
+            padding: 15px 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar h1 {
+            color: #667eea;
+            font-size: 24px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .user-info span {
+            color: #666;
+        }
+        .logout-btn {
+            padding: 8px 16px;
+            background: #f44336;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-card h3 {
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+        }
+        .customers-table {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .table-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #e1e1e1;
+        }
+        .table-header h2 {
+            color: #333;
+            font-size: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            background: #f9f9f9;
+            padding: 15px;
+            text-align: left;
+            color: #666;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #333;
+        }
+        tr:hover {
+            background: #f9f9f9;
+        }
+        .progress-bar {
+            width: 100px;
+            height: 8px;
+            background: #e1e1e1;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .badge-warning {
+            background: #fff3e0;
+            color: #e65100;
+        }
+        .badge-danger {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .view-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .view-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>SKD Systems Dashboard</h1>
+        <div class="user-info">
+            <span>Welcome, <%= user.fullName || user.username %></span>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Customers</h3>
+                <div class="value"><%= stats.total_customers %></div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Hours Purchased</h3>
+                <div class="value"><%= parseFloat(stats.total_hours_purchased).toFixed(1) %></div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Hours Used</h3>
+                <div class="value"><%= parseFloat(stats.total_hours_used).toFixed(1) %></div>
+            </div>
+            <div class="stat-card">
+                <h3>Hours Remaining</h3>
+                <div class="value"><%= parseFloat(stats.total_hours_remaining).toFixed(1) %></div>
+            </div>
+        </div>
+
+        <div class="customers-table">
+            <div class="table-header">
+                <h2>Customer Overview</h2>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Company</th>
+                        <th>Hours Purchased</th>
+                        <th>Hours Used</th>
+                        <th>Remaining</th>
+                        <th>Usage</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% customers.forEach(customer => { %>
+                        <tr>
+                            <td><strong><%= customer.customer_name %></strong></td>
+                            <td><%= customer.company_name || '-' %></td>
+                            <td><%= parseFloat(customer.hours_purchased).toFixed(1) %>h</td>
+                            <td><%= parseFloat(customer.hours_used).toFixed(1) %>h</td>
+                            <td><%= parseFloat(customer.hours_remaining).toFixed(1) %>h</td>
+                            <td>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: <%= Math.min(customer.usage_percentage || 0, 100) %>%"></div>
+                                </div>
+                                <%= customer.usage_percentage || 0 %>%
+                            </td>
+                            <td>
+                                <% 
+                                    let badgeClass = 'badge-success';
+                                    let statusText = 'Good';
+                                    const usage = customer.usage_percentage || 0;
+                                    if (usage >= 90) {
+                                        badgeClass = 'badge-danger';
+                                        statusText = 'Critical';
+                                    } else if (usage >= 70) {
+                                        badgeClass = 'badge-warning';
+                                        statusText = 'Warning';
+                                    }
+                                %>
+                                <span class="badge <%= badgeClass %>"><%= statusText %></span>
+                            </td>
+                            <td>
+                                <a href="/customer/<%= customer.id %>" class="view-link">View Details →</a>
+                            </td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
