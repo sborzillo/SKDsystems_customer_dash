@@ -37,6 +37,8 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - SESSION_SECRET=${SESSION_SECRET}
+      - ZAMMAD_URL=http://zammad-nginx:8080
+      - ZAMMAD_API_TOKEN=${ZAMMAD_API_TOKEN}
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,8 +48,169 @@ services:
       - ./:/usr/src/app
       - /usr/src/app/node_modules
 
+  # Zammad Services
+  zammad-backup:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    networks:
+      - dashboard_network
+    volumes:
+      - zammad-backup:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=${ZAMMAD_POSTGRES_PASS:-zammad}
+      - POSTGRES_USER=zammad
+      - POSTGRES_DB=zammad_production
+
+  zammad-memcached:
+    image: memcached:1.6-alpine
+    restart: unless-stopped
+    networks:
+      - dashboard_network
+
+  zammad-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - dashboard_network
+
+  zammad-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    restart: unless-stopped
+    networks:
+      - dashboard_network
+    volumes:
+      - zammad-elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+
+  zammad-init:
+    image: zammad/zammad-docker-compose:zammad-6.2.0-2
+    restart: on-failure
+    depends_on:
+      - zammad-backup
+      - zammad-redis
+      - zammad-memcached
+      - zammad-elasticsearch
+    networks:
+      - dashboard_network
+    environment:
+      - MEMCACHE_SERVERS=zammad-memcached:11211
+      - POSTGRESQL_HOST=zammad-backup
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USER=zammad
+      - POSTGRESQL_PASS=${ZAMMAD_POSTGRES_PASS:-zammad}
+      - POSTGRESQL_DB=zammad_production
+      - REDIS_URL=redis://zammad-redis:6379
+      - ELASTICSEARCH_HOST=zammad-elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEMA=http
+      - ELASTICSEARCH_NAMESPACE=zammad
+    command: ["zammad-init"]
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+
+  zammad-nginx:
+    image: zammad/zammad-docker-compose:zammad-6.2.0-2
+    restart: unless-stopped
+    depends_on:
+      - zammad-railsserver
+    networks:
+      - dashboard_network
+    ports:
+      - "8080:8080"
+    environment:
+      - MEMCACHE_SERVERS=zammad-memcached:11211
+      - POSTGRESQL_HOST=zammad-backup
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USER=zammad
+      - POSTGRESQL_PASS=${ZAMMAD_POSTGRES_PASS:-zammad}
+      - POSTGRESQL_DB=zammad_production
+      - REDIS_URL=redis://zammad-redis:6379
+      - ELASTICSEARCH_HOST=zammad-elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEMA=http
+      - ELASTICSEARCH_NAMESPACE=zammad
+      - NGINX_SERVER_SCHEME=http
+    command: ["zammad-nginx"]
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+
+  zammad-railsserver:
+    image: zammad/zammad-docker-compose:zammad-6.2.0-2
+    restart: unless-stopped
+    depends_on:
+      - zammad-init
+    networks:
+      - dashboard_network
+    environment:
+      - MEMCACHE_SERVERS=zammad-memcached:11211
+      - POSTGRESQL_HOST=zammad-backup
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USER=zammad
+      - POSTGRESQL_PASS=${ZAMMAD_POSTGRES_PASS:-zammad}
+      - POSTGRESQL_DB=zammad_production
+      - REDIS_URL=redis://zammad-redis:6379
+      - ELASTICSEARCH_HOST=zammad-elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEMA=http
+      - ELASTICSEARCH_NAMESPACE=zammad
+    command: ["zammad-railsserver"]
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+
+  zammad-scheduler:
+    image: zammad/zammad-docker-compose:zammad-6.2.0-2
+    restart: unless-stopped
+    depends_on:
+      - zammad-init
+    networks:
+      - dashboard_network
+    environment:
+      - MEMCACHE_SERVERS=zammad-memcached:11211
+      - POSTGRESQL_HOST=zammad-backup
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USER=zammad
+      - POSTGRESQL_PASS=${ZAMMAD_POSTGRES_PASS:-zammad}
+      - POSTGRESQL_DB=zammad_production
+      - REDIS_URL=redis://zammad-redis:6379
+      - ELASTICSEARCH_HOST=zammad-elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEMA=http
+      - ELASTICSEARCH_NAMESPACE=zammad
+    command: ["zammad-scheduler"]
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+
+  zammad-websocket:
+    image: zammad/zammad-docker-compose:zammad-6.2.0-2
+    restart: unless-stopped
+    depends_on:
+      - zammad-init
+    networks:
+      - dashboard_network
+    environment:
+      - MEMCACHE_SERVERS=zammad-memcached:11211
+      - POSTGRESQL_HOST=zammad-backup
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USER=zammad
+      - POSTGRESQL_PASS=${ZAMMAD_POSTGRES_PASS:-zammad}
+      - POSTGRESQL_DB=zammad_production
+      - REDIS_URL=redis://zammad-redis:6379
+      - ELASTICSEARCH_HOST=zammad-elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEMA=http
+      - ELASTICSEARCH_NAMESPACE=zammad
+    command: ["zammad-websocket"]
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+
 volumes:
   postgres_data:
+  zammad-backup:
+  zammad-elasticsearch:
+  zammad-storage:
 
 networks:
   dashboard_network:
