@@ -219,8 +219,9 @@
         <div class="navbar-content">
             <h1><span class="gradient-text">SKD</span>Systems Dashboard</h1>
             <div class="user-info">
+                <a href="/tickets" class="nav-link">🎫 Tickets</a>
                 <% if (user.isAdmin) { %>
-                    <a href="/manage" class="nav-link">⚙️ Manage Customers</a>
+                    <a href="/manage" class="nav-link">⚙️ Manage</a>
                 <% } %>
                 <span>Welcome, <%= user.fullName || user.username %></span>
                 <a href="/logout" class="logout-btn">Logout</a>
