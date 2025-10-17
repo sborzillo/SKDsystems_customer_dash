@@ -79,7 +79,7 @@
         <% if (!zammadConfigured) { %>
             <div class="alert alert-warning">
                 ⚠️ <strong>Zammad not configured.</strong> Please complete the Zammad setup and add your API token to the .env file. 
-                <a href="http://localhost:8080" target="_blank" class="zammad-link">Open Zammad →</a>
+                <a href="<%= zammadPublicUrl %>" target="_blank" class="zammad-link">Open Zammad →</a>
             </div>
         <% } %>
 
@@ -115,7 +115,7 @@
                 <h2>Support Tickets</h2>
                 <div style="display: flex; gap: 12px;">
                     <a href="/tickets/new" class="btn-primary">+ New Ticket</a>
-                    <a href="http://localhost:8080" target="_blank" class="zammad-link">Open Zammad →</a>
+                    <a href="<%= zammadPublicUrl %>" target="_blank" class="zammad-link">Open Zammad →</a>
                 </div>
             </div>
 
