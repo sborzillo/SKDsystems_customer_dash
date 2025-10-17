@@ -114,8 +114,7 @@
             <div class="page-header">
                 <h2>Support Tickets</h2>
                 <div style="display: flex; gap: 12px;">
-                    <a href="<%= zammadPublicUrl %>" target="_blank" class="btn-primary">+ New Ticket</a>
-                    <a href="<%= zammadPublicUrl %>" target="_blank" class="zammad-link">Open Zammad →</a>
+                    <a href="<%= zammadPublicUrl %>" target="_blank" class="btn-primary">Open Zammad</a>
                 </div>
             </div>
 
@@ -129,19 +128,19 @@
                             <th>Status</th>
                             <th>Priority</th>
                             <th>Created</th>
-                            <th>Actions</th>
+                            <th>Updated</th>
                         </tr>
                     </thead>
                     <tbody>
                         <% if (tickets.length === 0) { %>
                             <tr>
                                 <td colspan="7" style="text-align: center; padding: 40px; color: #64748b;">
-                                    No tickets found. Click "New Ticket" to create one in Zammad.
+                                    No tickets found. <a href="<%= zammadPublicUrl %>" target="_blank" style="color: #E6282A;">Open Zammad</a> to create tickets.
                                 </td>
                             </tr>
                         <% } else { %>
                             <% tickets.forEach(ticket => { %>
-                                <tr>
+                                <tr style="cursor: pointer;" onclick="window.open('<%= zammadPublicUrl %>', '_blank')">
                                     <td><strong>#<%= ticket.number %></strong></td>
                                     <td><%= ticket.title %></td>
                                     <td><%= ticket.customer?.email || ticket.customer || 'N/A' %></td>
@@ -163,14 +162,16 @@
                                         </span>
                                     </td>
                                     <td><%= new Date(ticket.created_at).toLocaleDateString() %></td>
-                                    <td>
-                                        <a href="<%= zammadPublicUrl %>/ticket/zoom/<%= ticket.id %>" target="_blank" class="view-btn">View</a>
-                                    </td>
+                                    <td><%= new Date(ticket.updated_at).toLocaleDateString() %></td>
                                 </tr>
                             <% }); %>
                         <% } %>
                     </tbody>
                 </table>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 16px; background: #dbeafe; border-radius: 12px; border-left: 4px solid #3b82f6;">
+                <strong>💡 Tip:</strong> Click "Open Zammad" or click any ticket row to manage tickets in the full Zammad interface.
             </div>
         <% } %>
     </div>
