@@ -114,7 +114,7 @@
             <div class="page-header">
                 <h2>Support Tickets</h2>
                 <div style="display: flex; gap: 12px;">
-                    <a href="/tickets/new" class="btn-primary">+ New Ticket</a>
+                    <a href="<%= zammadPublicUrl %>" target="_blank" class="btn-primary">+ New Ticket</a>
                     <a href="<%= zammadPublicUrl %>" target="_blank" class="zammad-link">Open Zammad →</a>
                 </div>
             </div>
@@ -136,7 +136,7 @@
                         <% if (tickets.length === 0) { %>
                             <tr>
                                 <td colspan="7" style="text-align: center; padding: 40px; color: #64748b;">
-                                    No tickets found. Click "New Ticket" to create one.
+                                    No tickets found. Click "New Ticket" to create one in Zammad.
                                 </td>
                             </tr>
                         <% } else { %>
@@ -164,7 +164,7 @@
                                     </td>
                                     <td><%= new Date(ticket.created_at).toLocaleDateString() %></td>
                                     <td>
-                                        <a href="/tickets/<%= ticket.id %>" class="view-btn">View</a>
+                                        <a href="<%= zammadPublicUrl %>/ticket/zoom/<%= ticket.id %>" target="_blank" class="view-btn">View</a>
                                     </td>
                                 </tr>
                             <% }); %>
