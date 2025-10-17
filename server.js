@@ -4,6 +4,7 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
 const path = require('path');
+const zammadService = require('./services/zammad');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -195,6 +196,55 @@ app.get('/dashboard', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Dashboard error:', error);
         res.status(500).send('Error loading dashboard');
+    }
+});
+
+// Tickets routes
+app.get('/tickets', requireAuth, async (req, res) => {
+    try {
+        const zammadConfigured = zammadService.isConfigured();
+        
+        let tickets = [];
+        let stats = { total: 0, open: 0, pending: 0, closed: 0 };
+        
+        if (zammadConfigured) {
+            try {
+                // Get all tickets or filter by customer email
+                if (req.session.isAdmin) {
+                    tickets = await zammadService.getTickets();
+                } else {
+                    // Get customer email from database
+                    const customerResult = await pool.query(
+                        'SELECT email FROM customers WHERE id = $1',
+                        [req.session.customerId]
+                    );
+                    
+                    if (customerResult.rows.length > 0 && customerResult.rows[0].email) {
+                        tickets = await zammadService.getTicketsByCustomer(customerResult.rows[0].email);
+                    }
+                }
+                
+                stats = await zammadService.getTicketStats();
+            } catch (error) {
+                console.error('Error fetching tickets:', error);
+            }
+        }
+        
+        res.render('tickets', {
+            user: {
+                username: req.session.username,
+                fullName: req.session.fullName,
+                isAdmin: req.session.isAdmin
+            },
+            tickets: tickets,
+            stats: stats,
+            zammadConfigured: zammadConfigured,
+            success: req.query.success,
+            error: req.query.error
+        });
+    } catch (error) {
+        console.error('Tickets page error:', error);
+        res.status(500).send('Error loading tickets page');
     }
 });
 
