@@ -250,6 +250,96 @@ app.get('/tickets', requireAuth, async (req, res) => {
     }
 });
 
+// Ticket detail page
+app.get('/tickets/:id', requireAuth, async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const zammadPublicUrl = process.env.ZAMMAD_PUBLIC_URL || 'http://localhost:8080';
+        
+        if (!zammadService.isConfigured()) {
+            return res.redirect('/tickets?error=Zammad not configured');
+        }
+        
+        // Get ticket details
+        const ticket = await zammadService.getTicket(ticketId);
+        
+        // Check if user has permission to view this ticket
+        if (!req.session.isAdmin) {
+            // Get customer email
+            const customerResult = await pool.query(
+                'SELECT email FROM customers WHERE id = $1',
+                [req.session.customerId]
+            );
+            
+            const customerEmail = customerResult.rows[0]?.email;
+            const ticketEmail = ticket.customer?.email || ticket.customer;
+            
+            if (customerEmail !== ticketEmail) {
+                return res.status(403).send('Access denied. You can only view your own tickets.');
+            }
+        }
+        
+        // Get ticket articles/comments
+        const articles = await zammadService.getTicketArticles(ticketId);
+        
+        res.render('ticket-detail', {
+            user: {
+                username: req.session.username,
+                fullName: req.session.fullName,
+                isAdmin: req.session.isAdmin
+            },
+            ticket: ticket,
+            articles: articles,
+            zammadPublicUrl: zammadPublicUrl,
+            success: req.query.success,
+            error: req.query.error
+        });
+    } catch (error) {
+        console.error('Ticket detail error:', error);
+        res.redirect('/tickets?error=Failed to load ticket');
+    }
+});
+
+// Add reply to ticket
+app.post('/tickets/:id/reply', requireAuth, async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const { body } = req.body;
+        
+        if (!zammadService.isConfigured()) {
+            return res.redirect(`/tickets/${ticketId}?error=Zammad not configured`);
+        }
+        
+        // Get ticket to verify permissions
+        const ticket = await zammadService.getTicket(ticketId);
+        
+        if (!req.session.isAdmin) {
+            const customerResult = await pool.query(
+                'SELECT email FROM customers WHERE id = $1',
+                [req.session.customerId]
+            );
+            
+            const customerEmail = customerResult.rows[0]?.email;
+            const ticketEmail = ticket.customer?.email || ticket.customer;
+            
+            if (customerEmail !== ticketEmail) {
+                return res.status(403).send('Access denied.');
+            }
+        }
+        
+        // Add article/reply
+        await zammadService.addArticle(ticketId, {
+            body: body,
+            internal: false
+        });
+        
+        res.redirect(`/tickets/${ticketId}?success=Reply added successfully`);
+    } catch (error) {
+        console.error('Add reply error:', error);
+        res.redirect(`/tickets/${req.params.id}?error=Failed to add reply`);
+    }
+});
+
 // Management page - ADMIN ONLY
 app.get('/manage', requireAuth, requireAdmin, async (req, res) => {
     try {

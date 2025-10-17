@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket #<%= ticket.number %> - SKD Systems</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: #f8fafc; }
+        .navbar { position: sticky; top: 0; z-index: 40; background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+        .navbar-content { max-width: 1400px; margin: 0 auto; padding: 0 24px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar h1 { font-size: 20px; font-weight: 600; color: #0f172a; }
+        .gradient-text { background: linear-gradient(90deg, #E6282A, #FFA3A5); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .nav-links { display: flex; gap: 20px; align-items: center; }
+        .nav-link { color: #0f172a; text-decoration: none; font-weight: 500; padding: 8px 16px; border-radius: 8px; transition: all 0.2s; font-size: 14px; }
+        .nav-link:hover { background: #f1f5f9; }
+        .logout-btn { padding: 8px 16px; background: linear-gradient(90deg, #E6282A, #FFA3A5); color: white; text-decoration: none; border-radius: 12px; font-size: 14px; font-weight: 500; }
+        .container { max-width: 1200px; margin: 32px auto; padding: 0 24px; }
+        
+        .back-btn { display: inline-flex; align-items: center; gap: 8px; color: #64748b; text-decoration: none; margin-bottom: 24px; font-weight: 500; }
+        .back-btn:hover { color: #E6282A; }
+        
+        .ticket-header { background: white; padding: 24px; border-radius: 16px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; margin-bottom: 24px; }
+        .ticket-header h1 { color: #0f172a; font-size: 24px; font-weight: 600; margin-bottom: 16px; }
+        .ticket-meta { display: flex; flex-wrap: wrap; gap: 24px; }
+        .meta-item { display: flex; flex-direction: column; gap: 4px; }
+        .meta-label { color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+        .meta-value { color: #0f172a; font-size: 14px; font-weight: 500; }
+        
+        .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: capitalize; display: inline-block; }
+        .status-new { background: #dbeafe; color: #1e40af; }
+        .status-open { background: #fef3c7; color: #92400e; }
+        .status-pending { background: #fce7f3; color: #9f1239; }
+        .status-closed { background: #dcfce7; color: #166534; }
+        
+        .priority-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }
+        .priority-low { background: #f1f5f9; color: #64748b; }
+        .priority-normal { background: #dbeafe; color: #1e40af; }
+        .priority-high { background: #fef3c7; color: #92400e; }
+        .priority-urgent { background: #fee2e2; color: #991b1b; }
+        
+        .conversation { background: white; padding: 24px; border-radius: 16px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; }
+        .conversation h2 { color: #0f172a; font-size: 18px; font-weight: 600; margin-bottom: 20px; }
+        
+        .article { padding: 20px; border-left: 4px solid #e2e8f0; margin-bottom: 20px; background: #f8fafc; border-radius: 8px; }
+        .article:last-child { margin-bottom: 0; }
+        .article-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+        .article-author { font-weight: 600; color: #0f172a; }
+        .article-date { color: #64748b; font-size: 13px; }
+        .article-body { color: #334155; line-height: 1.6; white-space: pre-wrap; }
+        
+        .reply-form { margin-top: 24px; padding: 20px; background: white; border-radius: 12px; border: 2px solid #e2e8f0; }
+        .reply-form h3 { color: #0f172a; font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; color: #64748b; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+        .form-group textarea { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-family: inherit; font-size: 14px; resize: vertical; min-height: 120px; }
+        .form-group textarea:focus { outline: none; border-color: #E6282A; }
+        
+        .btn-primary { padding: 12px 24px; background: linear-gradient(90deg, #E6282A, #FFA3A5); color: white; border: none; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(230, 40, 42, 0.3); }
+        
+        .alert { padding: 16px 20px; border-radius: 12px; margin-bottom: 20px; font-weight: 500; font-size: 14px; }
+        .alert-success { background: #dcfce7; color: #166534; border-left: 4px solid #166534; }
+        .alert-error { background: #fee2e2; color: #991b1b; border-left: 4px solid #991b1b; }
+        
+        .actions { display: flex; gap: 12px; margin-top: 20px; }
+        .btn-secondary { padding: 8px 16px; background: #f1f5f9; color: #334155; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn-secondary:hover { background: #e2e8f0; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <h1><span class="gradient-text">SKD</span>Systems Dashboard</h1>
+            <div class="nav-links">
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/tickets" class="nav-link">🎫 Tickets</a>
+                <% if (user.isAdmin) { %>
+                    <a href="/manage" class="nav-link">⚙️ Manage</a>
+                <% } %>
+                <span style="color: #64748b; font-size: 14px;">Welcome, <%= user.fullName || user.username %></span>
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <a href="/tickets" class="back-btn">← Back to Tickets</a>
+        
+        <% if (success) { %>
+            <div class="alert alert-success"><%= success %></div>
+        <% } %>
+        
+        <% if (error) { %>
+            <div class="alert alert-error"><%= error %></div>
+        <% } %>
+        
+        <div class="ticket-header">
+            <h1>Ticket #<%= ticket.number %>: <%= ticket.title %></h1>
+            <div class="ticket-meta">
+                <div class="meta-item">
+                    <span class="meta-label">Status</span>
+                    <span class="status-badge status-<%= (ticket.state?.name || ticket.state || 'new').toLowerCase() %>">
+                        <%= ticket.state?.name || ticket.state || 'New' %>
+                    </span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Priority</span>
+                    <% 
+                        const priority = (ticket.priority?.name || ticket.priority || '2 normal').toLowerCase();
+                        let priorityClass = 'priority-normal';
+                        if (priority.includes('low')) priorityClass = 'priority-low';
+                        if (priority.includes('high')) priorityClass = 'priority-high';
+                        if (priority.includes('urgent')) priorityClass = 'priority-urgent';
+                    %>
+                    <span class="priority-badge <%= priorityClass %>">
+                        <%= ticket.priority?.name || ticket.priority || 'Normal' %>
+                    </span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Customer</span>
+                    <span class="meta-value"><%= ticket.customer?.email || ticket.customer || 'N/A' %></span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Created</span>
+                    <span class="meta-value"><%= new Date(ticket.created_at).toLocaleString() %></span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Last Updated</span>
+                    <span class="meta-value"><%= new Date(ticket.updated_at).toLocaleString() %></span>
+                </div>
+            </div>
+            
+            <% if (user.isAdmin) { %>
+                <div class="actions">
+                    <a href="<%= zammadPublicUrl %>/ticket/zoom/<%= ticket.id %>" target="_blank" class="btn-secondary">Open in Zammad →</a>
+                </div>
+            <% } %>
+        </div>
+        
+        <div class="conversation">
+            <h2>Conversation</h2>
+            
+            <% if (articles && articles.length > 0) { %>
+                <% articles.forEach(article => { %>
+                    <div class="article">
+                        <div class="article-header">
+                            <div>
+                                <div class="article-author">
+                                    <%= article.from || article.created_by?.firstname || 'Unknown' %>
+                                    <% if (article.internal) { %>
+                                        <span style="color: #991b1b; font-size: 12px;">(Internal Note)</span>
+                                    <% } %>
+                                </div>
+                            </div>
+                            <div class="article-date">
+                                <%= new Date(article.created_at).toLocaleString() %>
+                            </div>
+                        </div>
+                        <div class="article-body"><%= article.body %></div>
+                    </div>
+                <% }); %>
+            <% } else { %>
+                <p style="color: #64748b; text-align: center; padding: 40px;">No messages yet.</p>
+            <% } %>
+            
+            <div class="reply-form">
+                <h3>Add Reply</h3>
+                <form action="/tickets/<%= ticket.id %>/reply" method="POST">
+                    <div class="form-group">
+                        <label for="body">Message</label>
+                        <textarea name="body" id="body" required></textarea>
+                    </div>
+                    <button type="submit" class="btn-primary">Send Reply</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
