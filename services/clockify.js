@@ -75,111 +75,115 @@ class ClockifyService {
         }
     }
 
-    // Get time entries for a user in a workspace
-    async getTimeEntries(workspaceId, userId, startDate, endDate, options = {}) {
+    // Get time entries for a user in a workspace with pagination
+    async getAllTimeEntries(workspaceId, userId, startDate, endDate) {
         try {
-            const params = {
-                start: startDate.toISOString(),
-                end: endDate.toISOString(),
-                'page-size': 1000,
-                ...options
-            };
+            let allEntries = [];
+            let page = 1;
+            const pageSize = 200;
+            let hasMore = true;
 
-            const response = await this.client.get(
-                `/workspaces/${workspaceId}/user/${userId}/time-entries`,
-                { params }
-            );
-            return response.data;
+            while (hasMore) {
+                const params = {
+                    start: startDate.toISOString(),
+                    end: endDate.toISOString(),
+                    'page-size': pageSize,
+                    page: page
+                };
+
+                const response = await this.client.get(
+                    `/workspaces/${workspaceId}/user/${userId}/time-entries`,
+                    { params }
+                );
+
+                const entries = response.data;
+                
+                if (entries && entries.length > 0) {
+                    allEntries = allEntries.concat(entries);
+                    page++;
+                    
+                    // If we got fewer entries than page size, we're done
+                    if (entries.length < pageSize) {
+                        hasMore = false;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            return allEntries;
         } catch (error) {
             console.error('Error fetching time entries:', error.message);
             throw error;
         }
     }
 
-    // Get detailed time report
-    async getDetailedReport(workspaceId, startDate, endDate, options = {}) {
-        try {
-            const body = {
-                dateRangeStart: startDate.toISOString(),
-                dateRangeEnd: endDate.toISOString(),
-                detailedFilter: {
-                    page: 1,
-                    pageSize: 1000,
-                    ...options
-                }
-            };
-
-            const response = await this.client.post(
-                `/workspaces/${workspaceId}/reports/detailed`,
-                body
-            );
-            return response.data;
-        } catch (error) {
-            console.error('Error fetching detailed report:', error.message);
-            throw error;
-        }
-    }
-
-    // Calculate hours from duration (duration is in ISO 8601 format like "PT1H30M")
-    durationToHours(duration) {
-        if (!duration) return 0;
+    // Calculate duration in hours from time interval
+    calculateDuration(timeInterval) {
+        if (!timeInterval || !timeInterval.start) return 0;
         
-        // Parse ISO 8601 duration or seconds
-        if (typeof duration === 'string') {
-            const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-            if (match) {
-                const hours = parseInt(match[1] || 0);
-                const minutes = parseInt(match[2] || 0);
-                const seconds = parseInt(match[3] || 0);
-                return hours + (minutes / 60) + (seconds / 3600);
-            }
-        }
+        const start = new Date(timeInterval.start);
+        const end = timeInterval.end ? new Date(timeInterval.end) : new Date();
+        const durationMs = end - start;
+        const hours = durationMs / (1000 * 60 * 60);
         
-        // If duration is in seconds
-        if (typeof duration === 'number') {
-            return duration / 3600;
-        }
-        
-        return 0;
+        return hours;
     }
 
     // Get billable hours by client for a date range
-    async getBillableHoursByClient(workspaceId, startDate, endDate, billableTagIds = []) {
+    async getBillableHoursByClient(workspaceId, userId, startDate, endDate) {
         try {
-            const report = await this.getDetailedReport(workspaceId, startDate, endDate, {
-                billable: 'BILLABLE'  // Only get billable entries
+            console.log('Fetching time entries from Clockify...');
+            const allEntries = await this.getAllTimeEntries(workspaceId, userId, startDate, endDate);
+            console.log(`Found ${allEntries.length} total time entries`);
+
+            // Get all projects to map project IDs to client names
+            const projects = await this.getProjects(workspaceId);
+            const projectMap = {};
+            projects.forEach(project => {
+                projectMap[project.id] = {
+                    name: project.name,
+                    clientId: project.clientId,
+                    clientName: project.clientName
+                };
             });
 
             const hoursByClient = {};
 
-            if (report.timeentries && Array.isArray(report.timeentries)) {
-                for (const entry of report.timeentries) {
-                    // Check if entry has billable tag if tags are specified
-                    if (billableTagIds.length > 0) {
-                        const entryTagIds = (entry.tags || []).map(t => t.id);
-                        const hasBillableTag = billableTagIds.some(tagId => entryTagIds.includes(tagId));
-                        if (!hasBillableTag) continue;
-                    }
+            for (const entry of allEntries) {
+                // Only count billable entries
+                if (!entry.billable) continue;
 
-                    const clientName = entry.clientName || entry.clientId || 'No Client';
-                    const clientId = entry.clientId;
-                    const duration = entry.timeInterval?.duration || 0;
-                    const hours = duration / 3600; // Convert seconds to hours
+                // Calculate duration
+                const hours = this.calculateDuration(entry.timeInterval);
+                
+                // Get client info from project
+                let clientName = 'No Client';
+                let clientId = null;
 
-                    if (!hoursByClient[clientName]) {
-                        hoursByClient[clientName] = {
-                            clientId: clientId,
-                            clientName: clientName,
-                            hours: 0,
-                            entries: 0
-                        };
-                    }
-
-                    hoursByClient[clientName].hours += hours;
-                    hoursByClient[clientName].entries += 1;
+                if (entry.projectId && projectMap[entry.projectId]) {
+                    const project = projectMap[entry.projectId];
+                    clientName = project.clientName || 'No Client';
+                    clientId = project.clientId;
                 }
+
+                // Skip entries without a client
+                if (clientName === 'No Client' || !clientName) continue;
+
+                if (!hoursByClient[clientName]) {
+                    hoursByClient[clientName] = {
+                        clientId: clientId,
+                        clientName: clientName,
+                        hours: 0,
+                        entries: 0
+                    };
+                }
+
+                hoursByClient[clientName].hours += hours;
+                hoursByClient[clientName].entries += 1;
             }
 
+            console.log(`Calculated billable hours for ${Object.keys(hoursByClient).length} clients`);
             return hoursByClient;
         } catch (error) {
             console.error('Error calculating billable hours:', error.message);
@@ -190,29 +194,26 @@ class ClockifyService {
     // Get summary data for dashboard
     async getSummaryData(workspaceId, userId, startDate, endDate) {
         try {
-            const entries = await this.getTimeEntries(workspaceId, userId, startDate, endDate);
+            const entries = await this.getAllTimeEntries(workspaceId, userId, startDate, endDate);
             
             let totalHours = 0;
             let billableHours = 0;
             const projectHours = {};
             
             for (const entry of entries) {
-                if (entry.timeInterval && entry.timeInterval.duration) {
-                    const duration = entry.timeInterval.duration;
-                    const hours = this.durationToHours(duration);
-                    
-                    totalHours += hours;
-                    
-                    if (entry.billable) {
-                        billableHours += hours;
+                const hours = this.calculateDuration(entry.timeInterval);
+                
+                totalHours += hours;
+                
+                if (entry.billable) {
+                    billableHours += hours;
+                }
+                
+                if (entry.projectId) {
+                    if (!projectHours[entry.projectId]) {
+                        projectHours[entry.projectId] = 0;
                     }
-                    
-                    if (entry.projectId) {
-                        if (!projectHours[entry.projectId]) {
-                            projectHours[entry.projectId] = 0;
-                        }
-                        projectHours[entry.projectId] += hours;
-                    }
+                    projectHours[entry.projectId] += hours;
                 }
             }
             
