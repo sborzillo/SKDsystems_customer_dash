@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
 const path = require('path');
 const zammadService = require('./services/zammad');
+const clockifyService = require('./services/clockify');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -250,93 +251,242 @@ app.get('/tickets', requireAuth, async (req, res) => {
     }
 });
 
-// Ticket detail page
-app.get('/tickets/:id', requireAuth, async (req, res) => {
+// Clockify Integration Routes - ADMIN ONLY
+app.get('/clockify', requireAuth, requireAdmin, async (req, res) => {
     try {
-        const ticketId = req.params.id;
-        const zammadPublicUrl = process.env.ZAMMAD_PUBLIC_URL || 'http://localhost:8080';
+        const clockifyConfigured = clockifyService.isConfigured();
         
-        if (!zammadService.isConfigured()) {
-            return res.redirect('/tickets?error=Zammad not configured');
-        }
+        let workspaceInfo = null;
+        let clients = [];
+        let dashboardCustomers = [];
+        let matchedCount = 0;
+        let lastSync = null;
         
-        // Get ticket details
-        const ticket = await zammadService.getTicket(ticketId);
-        
-        // Check if user has permission to view this ticket
-        if (!req.session.isAdmin) {
-            // Get customer email
-            const customerResult = await pool.query(
-                'SELECT email FROM customers WHERE id = $1',
-                [req.session.customerId]
-            );
-            
-            const customerEmail = customerResult.rows[0]?.email;
-            const ticketEmail = ticket.customer?.email || ticket.customer;
-            
-            if (customerEmail !== ticketEmail) {
-                return res.status(403).send('Access denied. You can only view your own tickets.');
+        if (clockifyConfigured) {
+            try {
+                // Get Clockify data
+                const user = await clockifyService.getCurrentUser();
+                const workspaces = await clockifyService.getWorkspaces();
+                
+                if (workspaces && workspaces.length > 0) {
+                    workspaceInfo = workspaces[0];
+                    clients = await clockifyService.getClients(workspaceInfo.id);
+                }
+                
+                // Get dashboard customers
+                const customersResult = await pool.query(
+                    'SELECT id, customer_name, company_name, email FROM customers ORDER BY customer_name'
+                );
+                dashboardCustomers = customersResult.rows;
+                
+                // Count matched clients
+                clients.forEach(client => {
+                    const matched = dashboardCustomers.find(c => 
+                        c.customer_name.toLowerCase() === client.name.toLowerCase() ||
+                        c.company_name.toLowerCase() === client.name.toLowerCase()
+                    );
+                    if (matched) matchedCount++;
+                });
+                
+            } catch (error) {
+                console.error('Error fetching Clockify data:', error);
+                return res.render('clockify', {
+                    user: { username: req.session.username, fullName: req.session.fullName, isAdmin: true },
+                    clockifyConfigured: false,
+                    error: 'Failed to connect to Clockify: ' + error.message,
+                    success: null
+                });
             }
         }
         
-        // Get ticket articles/comments
-        const articles = await zammadService.getTicketArticles(ticketId);
-        
-        res.render('ticket-detail', {
-            user: {
-                username: req.session.username,
-                fullName: req.session.fullName,
-                isAdmin: req.session.isAdmin
-            },
-            ticket: ticket,
-            articles: articles,
-            zammadPublicUrl: zammadPublicUrl,
+        res.render('clockify', {
+            user: { username: req.session.username, fullName: req.session.fullName, isAdmin: true },
+            clockifyConfigured: clockifyConfigured,
+            workspaceInfo: workspaceInfo,
+            clients: clients,
+            dashboardCustomers: dashboardCustomers,
+            matchedCount: matchedCount,
+            lastSync: lastSync,
             success: req.query.success,
             error: req.query.error
         });
     } catch (error) {
-        console.error('Ticket detail error:', error);
-        res.redirect('/tickets?error=Failed to load ticket');
+        console.error('Clockify page error:', error);
+        res.status(500).send('Error loading Clockify page');
     }
 });
 
-// Add reply to ticket
-app.post('/tickets/:id/reply', requireAuth, async (req, res) => {
+// Sync billable hours from Clockify - ADMIN ONLY
+app.post('/clockify/sync', requireAuth, requireAdmin, async (req, res) => {
     try {
-        const ticketId = req.params.id;
-        const { body } = req.body;
-        
-        if (!zammadService.isConfigured()) {
-            return res.redirect(`/tickets/${ticketId}?error=Zammad not configured`);
+        if (!clockifyService.isConfigured()) {
+            return res.redirect('/clockify?error=Clockify not configured');
         }
         
-        // Get ticket to verify permissions
-        const ticket = await zammadService.getTicket(ticketId);
+        // Get workspace
+        const workspaces = await clockifyService.getWorkspaces();
+        if (!workspaces || workspaces.length === 0) {
+            return res.redirect('/clockify?error=No Clockify workspace found');
+        }
         
-        if (!req.session.isAdmin) {
-            const customerResult = await pool.query(
-                'SELECT email FROM customers WHERE id = $1',
-                [req.session.customerId]
+        const workspaceId = workspaces[0].id;
+        
+        // Get date range (current year)
+        const startDate = new Date(new Date().getFullYear(), 0, 1);
+        const endDate = new Date();
+        
+        // Get billable hours by client
+        const hoursByClient = await clockifyService.getBillableHoursByClient(
+            workspaceId,
+            startDate,
+            endDate
+        );
+        
+        // Update dashboard customers
+        let updatedCount = 0;
+        const client = await pool.connect();
+        
+        try {
+            await client.query('BEGIN');
+            
+            for (const [clientName, data] of Object.entries(hoursByClient)) {
+                // Find matching customer
+                const customerResult = await client.query(
+                    `SELECT id FROM customers 
+                     WHERE LOWER(customer_name) = LOWER($1) OR LOWER(company_name) = LOWER($1)`,
+                    [clientName]
+                );
+                
+                if (customerResult.rows.length > 0) {
+                    const customerId = customerResult.rows[0].id;
+                    
+                    // Update hours_used
+                    await client.query(
+                        'UPDATE customers SET hours_used = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+                        [Math.round(data.hours * 100) / 100, customerId]
+                    );
+                    
+                    updatedCount++;
+                }
+            }
+            
+            await client.query('COMMIT');
+            
+            res.redirect(`/clockify?success=Synced ${updatedCount} customers with billable hours from Clockify`);
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Clockify sync error:', error);
+        res.redirect('/clockify?error=Failed to sync: ' + error.message);
+    }
+});
+
+// Import single Clockify client as customer - ADMIN ONLY
+app.post('/clockify/import-client/:id', requireAuth, requireAdmin, async (req, res) => {
+    const clientDbConnection = await pool.connect();
+    
+    try {
+        const clockifyClientId = req.params.id;
+        
+        if (!clockifyService.isConfigured()) {
+            return res.redirect('/clockify?error=Clockify not configured');
+        }
+        
+        // Get all Clockify clients
+        const workspaces = await clockifyService.getWorkspaces();
+        const clients = await clockifyService.getClients(workspaces[0].id);
+        const client = clients.find(c => c.id === clockifyClientId);
+        
+        if (!client) {
+            return res.redirect('/clockify?error=Clockify client not found');
+        }
+        
+        await clientDbConnection.query('BEGIN');
+        
+        // Insert customer
+        const customerResult = await clientDbConnection.query(
+            `INSERT INTO customers (customer_name, company_name, email, hours_purchased, hours_used)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [client.name, client.name, client.email || '', 0, 0]
+        );
+        
+        const customerId = customerResult.rows[0].id;
+        
+        // Insert infrastructure stats
+        await clientDbConnection.query(
+            `INSERT INTO infrastructure_stats (customer_id, server_count, storage_gb, bandwidth_gb, active_services)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [customerId, 0, 0, 0, 0]
+        );
+        
+        await clientDbConnection.query('COMMIT');
+        res.redirect('/clockify?success=Imported ' + client.name + ' as a customer');
+    } catch (error) {
+        await clientDbConnection.query('ROLLBACK');
+        console.error('Import client error:', error);
+        res.redirect('/clockify?error=Failed to import client');
+    } finally {
+        clientDbConnection.release();
+    }
+});
+
+// Import all Clockify clients as customers - ADMIN ONLY
+app.get('/clockify/import-clients', requireAuth, requireAdmin, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        if (!clockifyService.isConfigured()) {
+            return res.redirect('/clockify?error=Clockify not configured');
+        }
+        
+        const workspaces = await clockifyService.getWorkspaces();
+        const clients = await clockifyService.getClients(workspaces[0].id);
+        
+        await client.query('BEGIN');
+        
+        let importedCount = 0;
+        
+        for (const clockifyClient of clients) {
+            // Check if customer already exists
+            const existingCustomer = await client.query(
+                `SELECT id FROM customers 
+                 WHERE LOWER(customer_name) = LOWER($1) OR LOWER(company_name) = LOWER($1)`,
+                [clockifyClient.name]
             );
             
-            const customerEmail = customerResult.rows[0]?.email;
-            const ticketEmail = ticket.customer?.email || ticket.customer;
-            
-            if (customerEmail !== ticketEmail) {
-                return res.status(403).send('Access denied.');
+            if (existingCustomer.rows.length === 0) {
+                // Insert customer
+                const customerResult = await client.query(
+                    `INSERT INTO customers (customer_name, company_name, email, hours_purchased, hours_used)
+                     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+                    [clockifyClient.name, clockifyClient.name, clockifyClient.email || '', 0, 0]
+                );
+                
+                const customerId = customerResult.rows[0].id;
+                
+                // Insert infrastructure stats
+                await client.query(
+                    `INSERT INTO infrastructure_stats (customer_id, server_count, storage_gb, bandwidth_gb, active_services)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [customerId, 0, 0, 0, 0]
+                );
+                
+                importedCount++;
             }
         }
         
-        // Add article/reply
-        await zammadService.addArticle(ticketId, {
-            body: body,
-            internal: false
-        });
-        
-        res.redirect(`/tickets/${ticketId}?success=Reply added successfully`);
+        await client.query('COMMIT');
+        res.redirect(`/clockify?success=Imported ${importedCount} new clients as customers`);
     } catch (error) {
-        console.error('Add reply error:', error);
-        res.redirect(`/tickets/${req.params.id}?error=Failed to add reply`);
+        await client.query('ROLLBACK');
+        console.error('Import all clients error:', error);
+        res.redirect('/clockify?error=Failed to import clients');
+    } finally {
+        client.release();
     }
 });
 
