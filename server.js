@@ -203,6 +203,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
 app.get('/tickets', requireAuth, async (req, res) => {
     try {
         const zammadConfigured = zammadService.isConfigured();
+        const zammadPublicUrl = process.env.ZAMMAD_PUBLIC_URL || 'http://localhost:8080';
         
         let tickets = [];
         let stats = { total: 0, open: 0, pending: 0, closed: 0 };
@@ -239,6 +240,7 @@ app.get('/tickets', requireAuth, async (req, res) => {
             tickets: tickets,
             stats: stats,
             zammadConfigured: zammadConfigured,
+            zammadPublicUrl: zammadPublicUrl,
             success: req.query.success,
             error: req.query.error
         });
